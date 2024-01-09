@@ -7,6 +7,7 @@ import socket
 import os
 import logging
 
+
 logging.basicConfig(filename='my_log.log', level=logging.DEBUG)
 
 
