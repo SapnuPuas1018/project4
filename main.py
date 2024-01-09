@@ -7,9 +7,7 @@ import socket
 import os
 import logging
 
-
 logging.basicConfig(filename='my_log.log', level=logging.DEBUG)
-
 
 QUEUE_SIZE = 10
 IP = '127.0.0.1'
