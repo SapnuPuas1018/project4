@@ -140,6 +140,7 @@ def image(resource):
     :return: The HTTP response message.
     :rtype: bytes
     """
+
     file_name = resource.split('=')[-1]
     return send_page_response(file_name, UPLOADS_PATH + '/')
 
