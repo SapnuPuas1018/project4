@@ -1,6 +1,6 @@
 """
 author - Yuval Hayun
-date   - 09/01/24
+date   - 26/01/24
 """
 
 import socket
@@ -25,16 +25,16 @@ CONTENT_TYPES = {
     'gif': 'image/gif',
     'ico': 'image/x-icon'
     }
+UPLOADS_PATH = r'C:\Users\nati2\PycharmProjects\project4\webroot\uploads'
 
 
 def get_file_data(path):
     """
-    Reads file data from the given path.
+    Returns the content of a file given its path.
 
-    :param path: Path to the file
+    :param path: The path of the file.
     :type path: str
-
-    :return: File data
+    :return: The content of the file.
     :rtype: bytes
     """
     with open(path, 'rb') as file:
@@ -42,17 +42,20 @@ def get_file_data(path):
     return txt
 
 
-def send_page_response(resource):
+def send_page_response(resource, webroot):
     """
-    Constructs an HTTP response for a requested resource.
+    Sends an HTTP response for a requested resource.
 
-    :param resource: Requested resource
+    :param resource: The requested resource.
     :type resource: str
-
-    :return: HTTP response message
+    :param webroot: The root directory for web content.
+    :type webroot: str
+    :return: The HTTP response message.
     :rtype: bytes
     """
-    path = 'webroot/' + resource
+    path = webroot + resource
+    print('path: ' + path)
+    logging.debug('path: ' + path)
     if os.path.isfile(path):
         page = get_file_data(path)
         header = 'HTTP/1.1 200 OK\r\n'.encode()
@@ -68,12 +71,11 @@ def send_page_response(resource):
 
 def ret_next_num(resource):
     """
-    Returns the next number after parsing the resource string.
+    Returns an HTTP response with the next number.
 
-    :param resource: Resource string
+    :param resource: The requested resource.
     :type resource: str
-
-    :return: HTTP response message with the next number
+    :return: The HTTP response message.
     :rtype: bytes
     """
     num = int(resource.split('=')[-1]) + 1
@@ -83,35 +85,76 @@ def ret_next_num(resource):
 
 def ret_area(resource):
     """
-    Calculates the area and constructs an HTTP response.
+    Returns an HTTP response with the calculated area.
 
-    :param resource: Resource string
+    :param resource: The requested resource.
     :type resource: str
-
-    :return: HTTP response message with the area calculation
+    :return: The HTTP response message.
     :rtype: bytes
     """
     lst = resource.split('?')[-1].split('&')
     height = lst[0].split('=')[-1]
     width = lst[-1].split('=')[-1]
     area = (int(width) * int(height))/2
-    area = int(area)
     msg = construct_msg('200 OK', 'text/plain', str(area))
     return msg
+
+
+def upload(resource, request,  client_socket):
+    """
+    Handles file uploads and returns an HTTP response.
+
+    :param resource: The requested resource.
+    :type resource: str
+    :param request: The HTTP request message.
+    :type request: bytes
+    :param client_socket: The client socket.
+    :type client_socket: socket.socket
+    :return: The HTTP response message.
+    :rtype: bytes
+    """
+    try:
+        file_name = resource.split('=')[-1]
+        file_path = os.path.join(UPLOADS_PATH, file_name)
+        msg = construct_msg('200 OK', 'text/plain', '')
+        request = request.decode()
+        content_length = request.split('\r\n')
+        for i in content_length:
+            if 'Content-Length' in i:
+                content_length = int(i.split(':')[1])
+                break
+        body = client_socket.recv(content_length)
+        with open(file_path, 'wb') as file:
+            file.write(body)
+        return msg
+    except socket.error as err:
+        logging.error('received socket exception - ' + str(err))
+
+
+def image(resource):
+    """
+    Returns an HTTP response for an image resource.
+
+    :param resource: The requested resource.
+    :type resource: str
+    :return: The HTTP response message.
+    :rtype: bytes
+    """
+    file_name = resource.split('=')[-1]
+    return send_page_response(file_name, UPLOADS_PATH + '/')
 
 
 def construct_msg(header_type, content_type, body):
     """
     Constructs an HTTP response message.
 
-    :param header_type: Type of HTTP header
+    :param header_type: The HTTP header type.
     :type header_type: str
-    :param content_type: Type of content in the response
+    :param content_type: The content type.
     :type content_type: str
-    :param body: Body of the message
+    :param body: The body of the response.
     :type body: str
-
-    :return: HTTP response message
+    :return: The HTTP response message.
     :rtype: bytes
     """
     if header_type.startswith('302'):
@@ -126,13 +169,15 @@ def construct_msg(header_type, content_type, body):
     return msg
 
 
-def handle_client_request(resource, client_socket):
+def handle_client_request(resource, request, client_socket):
     """
-    Handles client requests and sends appropriate responses.
+    Handles the client request and sends an appropriate HTTP response.
 
-    :param resource: Requested resource
+    :param resource: The requested resource.
     :type resource: bytes
-    :param client_socket: Client socket for communication
+    :param request: The HTTP request message.
+    :type request: bytes
+    :param client_socket: The client socket.
     :type client_socket: socket.socket
     """
     resource = resource.decode()
@@ -150,8 +195,12 @@ def handle_client_request(resource, client_socket):
         msg = ret_next_num(resource)
     elif resource.startswith('/calculate-area'):
         msg = ret_area(resource)
+    elif resource.startswith('/upload'):
+        msg = upload(resource, request, client_socket)
+    elif resource.startswith('/image'):
+        msg = image(resource)
     else:
-        msg = send_page_response(resource)
+        msg = send_page_response(resource, 'webroot/')
 
     if msg is not None:
         try:
@@ -164,43 +213,61 @@ def handle_client_request(resource, client_socket):
 
 def validate_http_request(request):
     """
-    Validates an HTTP request.
+    Validates the HTTP request and returns the resource.
 
-    :param request: HTTP request data
+    :param request: The HTTP request message.
     :type request: bytes
-
-    :return: Tuple with validation result and resource
-    :rtype: tuple[bool, bytes or None]
+    :return: A tuple with a boolean indicating validity and the resource.
+    :rtype: tuple
     """
     parts = request.split(b' ')
-    if parts[0] == b'GET':
+    if parts[0] == b'GET' or parts[0] == b'POST':
         return True, parts[1]
     else:
         return False, None
 
 
+def receive(client_socket):
+    """
+    Receives the headers of the HTTP request.
+
+    :param client_socket: The client socket.
+    :type client_socket: socket.socket
+    :return: The received headers.
+    :rtype: str
+    """
+    headers = ''
+    try:
+        while not headers.endswith('\r\n\r\n'):
+            chunk = client_socket.recv(1).decode()
+            if not chunk:   # empty msg
+                break
+            headers += chunk
+        return headers
+    except socket.error as err:
+        logging.error('received socket exception - ' + str(err))
+        return ''
+
+
 def handle_client(client_socket):
     """
-    Handles incoming client connections.
+    Handles the client connection and processes the HTTP request.
 
-    :param client_socket: Client socket for communication
+    :param client_socket: The client socket.
     :type client_socket: socket.socket
     """
     logging.debug('Client connected')
-    request = client_socket.recv(BUFFER_SIZE)
+    request = receive(client_socket).encode()
     valid_http, resource = validate_http_request(request)
     if valid_http:
         logging.debug('Got a valid HTTP request')
-        handle_client_request(resource, client_socket)
+        handle_client_request(resource, request, client_socket)
     else:
         logging.error('Error: Not a valid HTTP request')
     logging.debug('Closing connection')
 
 
 def main():
-    """
-    Main function to set up a server and handle incoming connections.
-    """
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         server_socket.bind((IP, PORT))
