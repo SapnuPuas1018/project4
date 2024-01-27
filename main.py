@@ -54,7 +54,6 @@ def send_page_response(resource, webroot):
     :rtype: bytes
     """
     path = webroot + resource
-    print('path: ' + path)
     logging.debug('path: ' + path)
     if os.path.isfile(path):
         page = get_file_data(path)
@@ -116,7 +115,7 @@ def upload(resource, request,  client_socket):
     try:
         file_name = resource.split('=')[-1]
         file_path = os.path.join(UPLOADS_PATH, file_name)
-        msg = construct_msg('200 OK', 'text/plain', '')
+        msg = construct_msg('200 OK', 'text/plain', 'uploaded successfully')
         request = request.decode()
         content_length = request.split('\r\n')
         for i in content_length:
